@@ -1,56 +1,72 @@
 #include "keypad_component.h"
 #include "esphome/core/log.h"
 
-static const char *TAG = "keypad_component";
+namespace esphome {
+namespace keypad_component {
 
-// Классическая раскладка 3x4
-static const char KEYS[4][3] = {
-    {'1', '2', '3'},
-    {'4', '5', '6'},
-    {'7', '8', '9'},
-    {'*', '0', '#'}
+static const char *TAG = "keypad";
+
+const char KEYMAP[4][3] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
 };
 
 void KeypadComponent::setup() {
-  ESP_LOGI(TAG, "Initializing keypad");
+  ESP_LOGI(TAG, "Setting up keypad");
 
-  // строки — выходы
-  for (auto pin : row_pins) {
-    pinMode(pin, OUTPUT);
-    digitalWrite(pin, HIGH);
+  for (auto pin : row_pins_) {
+    pin->setup();
+    pin->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP);
   }
 
-  // столбцы — входы с подтяжкой
-  for (auto pin : col_pins) {
-    pinMode(pin, INPUT_PULLUP);
+  for (auto pin : col_pins_) {
+    pin->setup();
+    pin->digital_write(true);
+    pin->pin_mode(gpio::FLAG_OUTPUT);
   }
-
-  ESP_LOGI(TAG, "Keypad ready: %d rows, %d cols",
-           row_pins.size(), col_pins.size());
 }
 
 void KeypadComponent::loop() {
-  for (size_t r = 0; r < row_pins.size(); r++) {
-    digitalWrite(row_pins[r], LOW);
+  for (size_t c = 0; c < col_pins_.size(); c++) {
+    col_pins_[c]->digital_write(false);
 
-    for (size_t c = 0; c < col_pins.size(); c++) {
-      if (digitalRead(col_pins[c]) == LOW) {
-        char key = KEYS[r][c];
-        ESP_LOGI(TAG, "Key pressed: %c", key);
-
-        // Пример: # — открыть замок
-        if (key == '#' && lock != nullptr) {
-          ESP_LOGI(TAG, "Unlock trigger");
-          lock->digital_write(true);
-          delay(1000);
-          lock->digital_write(false);
-        }
-
-        // антидребезг
-        delay(300);
+    for (size_t r = 0; r < row_pins_.size(); r++) {
+      if (!row_pins_[r]->digital_read()) {
+        char key = KEYMAP[r][c];
+        handle_key_(key);
+        delay(250);  // антидребезг
       }
     }
 
-    digitalWrite(row_pins[r], HIGH);
+    col_pins_[c]->digital_write(true);
   }
 }
+
+void KeypadComponent::handle_key_(char key) {
+  ESP_LOGD(TAG, "Key pressed: %c", key);
+
+  if (key == '#') {
+    if (entered_code_ == stored_code_) {
+      ESP_LOGI(TAG, "Correct code → opening lock");
+      lock_->turn_on();
+      delay(3000);
+      lock_->turn_off();
+    } else {
+      ESP_LOGW(TAG, "Wrong code");
+    }
+    entered_code_.clear();
+    return;
+  }
+
+  if (key == '*') {
+    entered_code_.clear();
+    return;
+  }
+
+  entered_code_ += key;
+}
+
+}  // namespace keypad_component
+}  // namespace esphome
