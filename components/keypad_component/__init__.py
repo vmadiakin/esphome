@@ -5,9 +5,11 @@ from esphome.const import CONF_ID
 
 DEPENDENCIES = ['gpio']
 
+# создаём пространство имён для компонента
 keypad_ns = cg.esphome_ns.namespace('keypad_component')
 KeypadComponent = keypad_ns.class_('KeypadComponent', cg.Component)
 
+# Конфиги YAML
 CONF_ROWS = 'row_pins'
 CONF_COLS = 'col_pins'
 CONF_LOCK = 'lock'
@@ -20,10 +22,13 @@ CONFIG_SCHEMA = cv.Schema({
 }).extend(cv.COMPONENT_SCHEMA)
 
 async def to_code(config):
+    # создаём объект C++ класса
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 
+    # row pins
     var.row_pins_ = [await cg.gpio_pin_expression(x) for x in config[CONF_ROWS]]
+    # col pins
     var.col_pins_ = [await cg.gpio_pin_expression(x) for x in config[CONF_COLS]]
+    # реле замка
     var.lock_ = await cg.get_variable(config[CONF_LOCK])
-    var.current_code_ = ""  # пока пустой, код будет приходить из HA/MQTT
