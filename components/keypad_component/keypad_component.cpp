@@ -1,88 +1,56 @@
-#pragma once
-#include "esphome.h"
+#include "keypad_component.h"
+#include "esphome/core/log.h"
 
-// Класс кастомного компонента для 3x4 панели
-class KeypadComponent : public Component {
- public:
-  // Пины строк (Rows) и столбцов (Cols)
-  std::vector<int> row_pins;
-  std::vector<int> col_pins;
+static const char *TAG = "keypad_component";
 
-  // Реле управления замком (подключаем через switch ESPHome)
-  switch_::Switch *lock;
-
-  // Локальные коды, которые разрешают открытие замка
-  std::vector<String> codes = {"1234","5678"};
-
-  // Текущий введенный код
-  String current_code = "";
-
-  void setup() override {
-    // Настраиваем строки как входы с подтяжкой
-    for(auto &r: row_pins){
-      pinMode(r, INPUT_PULLUP);
-    }
-    // Столбцы как выходы и поднимаем HIGH
-    for(auto &c: col_pins){
-      pinMode(c, OUTPUT);
-      digitalWrite(c, HIGH);
-    }
-  }
-
-  void loop() override {
-    // Сканируем панель
-    for(size_t c=0; c<col_pins.size(); c++){
-      digitalWrite(col_pins[c], LOW); // активируем столбец
-      for(size_t r=0; r<row_pins.size(); r++){
-        if(digitalRead(row_pins[r]) == LOW){ // кнопка нажата
-          char key = get_key(r,c);
-          handle_key(key);
-          delay(200); // антидребезг
-        }
-      }
-      digitalWrite(col_pins[c], HIGH); // отключаем столбец
-    }
-  }
-
-  // Получаем символ нажатой кнопки
-  char get_key(int row, int col){
-    // 3x4 панель как на телефоне
-    const char keys[4][3] = {
-      {'1','2','3'},  // Row1
-      {'4','5','6'},  // Row2
-      {'7','8','9'},  // Row3
-      {'*','0','#'}   // Row4
-    };
-    return keys[row][col];
-  }
-
-  // Обработка нажатой кнопки
-  void handle_key(char key){
-    if(key == '*'){ 
-      current_code = ""; // очистка кода
-      return;
-    }
-
-    if(key != '#'){
-      current_code += key;
-    }
-
-    // Когда введено 4 цифры — проверяем
-    if(current_code.length() == 4){ 
-      bool ok = false;
-      for(auto &c: codes){
-        if(c == current_code) ok = true;
-      }
-
-      if(ok){
-        ESP_LOGD("keypad","Code correct: %s", current_code.c_str());
-        if(lock) lock->turn_on();       // включаем реле
-        delay(3000);                     // держим 3 секунды
-        if(lock) lock->turn_off();      // отключаем реле
-      } else {
-        ESP_LOGD("keypad","Wrong code: %s", current_code.c_str());
-      }
-      current_code = "";
-    }
-  }
+// Классическая раскладка 3x4
+static const char KEYS[4][3] = {
+    {'1', '2', '3'},
+    {'4', '5', '6'},
+    {'7', '8', '9'},
+    {'*', '0', '#'}
 };
+
+void KeypadComponent::setup() {
+  ESP_LOGI(TAG, "Initializing keypad");
+
+  // строки — выходы
+  for (auto pin : row_pins) {
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+  }
+
+  // столбцы — входы с подтяжкой
+  for (auto pin : col_pins) {
+    pinMode(pin, INPUT_PULLUP);
+  }
+
+  ESP_LOGI(TAG, "Keypad ready: %d rows, %d cols",
+           row_pins.size(), col_pins.size());
+}
+
+void KeypadComponent::loop() {
+  for (size_t r = 0; r < row_pins.size(); r++) {
+    digitalWrite(row_pins[r], LOW);
+
+    for (size_t c = 0; c < col_pins.size(); c++) {
+      if (digitalRead(col_pins[c]) == LOW) {
+        char key = KEYS[r][c];
+        ESP_LOGI(TAG, "Key pressed: %c", key);
+
+        // Пример: # — открыть замок
+        if (key == '#' && lock != nullptr) {
+          ESP_LOGI(TAG, "Unlock trigger");
+          lock->digital_write(true);
+          delay(1000);
+          lock->digital_write(false);
+        }
+
+        // антидребезг
+        delay(300);
+      }
+    }
+
+    digitalWrite(row_pins[r], HIGH);
+  }
+}
